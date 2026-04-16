@@ -53,6 +53,14 @@ elif [ "$CC_SRC_LANGUAGE" = "java" ]; then
   ./gradlew installDist
   popd
   successln "Finished compiling Java code"
+
+  # Copy META-INF to the distribution directory if it exists
+  if [ -d "$CC_SRC_PATH/src/main/resources/META-INF" ]; then
+    cp -r "$CC_SRC_PATH/src/main/resources/META-INF" "$CC_SRC_PATH/build/install/$CC_NAME/"
+  elif [ -d "$CC_SRC_PATH/META-INF" ]; then
+    cp -r "$CC_SRC_PATH/META-INF" "$CC_SRC_PATH/build/install/$CC_NAME/"
+  fi
+
   CC_SRC_PATH=$CC_SRC_PATH/build/install/$CC_NAME
 
 elif [ "$CC_SRC_LANGUAGE" = "javascript" ]; then
