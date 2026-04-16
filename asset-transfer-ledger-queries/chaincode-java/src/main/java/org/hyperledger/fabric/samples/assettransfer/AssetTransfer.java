@@ -91,6 +91,10 @@ public final class AssetTransfer implements ContractInterface {
         String sortedJson = genson.serialize(asset);
         ctx.getStub().putStringState(asset.getAssetID(), sortedJson);
 
+        // Create composite key for color~name index
+        String indexKey = ctx.getStub().createCompositeKey("color~name", asset.getColor(), asset.getAssetID()).toString();
+        ctx.getStub().putState(indexKey, new byte[] {0x00});
+
         return asset;
     }
 
@@ -129,13 +133,16 @@ public final class AssetTransfer implements ContractInterface {
     public Asset UpdateAsset(final Context ctx, final String assetID, final String color, final int size,
         final String owner, final int appraisedValue) {
 
-        if (!AssetExists(ctx, assetID)) {
-            String errorMessage = String.format("Asset %s does not exist", assetID);
-            System.out.println(errorMessage);
-            throw new ChaincodeException(errorMessage, AssetTransferErrors.ASSET_NOT_FOUND.toString());
+        Asset asset = ReadAsset(ctx, assetID);
+        
+        // Delete old index if color changed
+        if (!asset.getColor().equals(color)) {
+            String oldIndexKey = ctx.getStub().createCompositeKey("color~name", asset.getColor(), asset.getAssetID()).toString();
+            ctx.getStub().delState(oldIndexKey);
         }
 
-        return putAsset(ctx, new Asset("asset", assetID, color, size, owner, appraisedValue));
+        Asset updatedAsset = new Asset("asset", assetID, color, size, owner, appraisedValue);
+        return putAsset(ctx, updatedAsset);
     }
 
     /**
@@ -146,13 +153,13 @@ public final class AssetTransfer implements ContractInterface {
      */
     @Transaction(intent = Transaction.TYPE.SUBMIT)
     public void DeleteAsset(final Context ctx, final String assetID) {
-        if (!AssetExists(ctx, assetID)) {
-            String errorMessage = String.format("Asset %s does not exist", assetID);
-            System.out.println(errorMessage);
-            throw new ChaincodeException(errorMessage, AssetTransferErrors.ASSET_NOT_FOUND.toString());
-        }
+        Asset asset = ReadAsset(ctx, assetID);
 
         ctx.getStub().delState(assetID);
+        
+        // Delete composite key index
+        String indexKey = ctx.getStub().createCompositeKey("color~name", asset.getColor(), asset.getAssetID()).toString();
+        ctx.getStub().delState(indexKey);
     }
 
     /**
@@ -182,9 +189,45 @@ public final class AssetTransfer implements ContractInterface {
         Asset asset = ReadAsset(ctx, assetID);
         String oldOwner = asset.getOwner();
 
-        putAsset(ctx, new Asset(asset.getDocType(), asset.getAssetID(), asset.getColor(), asset.getSize(), newOwner, asset.getAppraisedValue()));
+        Asset updatedAsset = new Asset(asset.getDocType(), asset.getAssetID(), asset.getColor(), asset.getSize(), newOwner, asset.getAppraisedValue());
+        putAsset(ctx, updatedAsset);
 
         return oldOwner;
+    }
+
+    /**
+     * GetAssetsByRange performs a range query based on the start and end keys provided.
+     */
+    @Transaction(intent = Transaction.TYPE.EVALUATE)
+    public String GetAssetsByRange(final Context ctx, final String startKey, final String endKey) {
+        QueryResultsIterator<KeyValue> results = ctx.getStub().getStateByRange(startKey, endKey);
+        List<Asset> queryResults = new ArrayList<>();
+
+        for (KeyValue res : results) {
+            Asset asset = genson.deserialize(res.getStringValue(), Asset.class);
+            queryResults.add(asset);
+        }
+
+        return genson.serialize(queryResults);
+    }
+
+    /**
+     * TransferAssetByColor will transfer assets of a given color to a certain new owner.
+     * This method demonstrates the use of composite keys for range queries.
+     */
+    @Transaction(intent = Transaction.TYPE.SUBMIT)
+    public void TransferAssetByColor(final Context ctx, final String color, final String newOwner) {
+        QueryResultsIterator<KeyValue> results = ctx.getStub().getStateByPartialCompositeKey("color~name", color);
+
+        for (KeyValue res : results) {
+            String compositeKey = res.getKey();
+            String[] keyParts = ctx.getStub().splitCompositeKey(compositeKey).getAttributes().toArray(new String[0]);
+            
+            if (keyParts.length > 0) {
+                String assetID = keyParts[0]; // The second part of the composite key is the ID
+                TransferAsset(ctx, assetID, newOwner);
+            }
+        }
     }
 
     /**
@@ -253,8 +296,23 @@ public final class AssetTransfer implements ContractInterface {
             queryResults.add(asset);
         }
 
-        // Return results and metadata (bookmark & fetched records count)
-        // For simplicity, we just return the results here in this sample.
+        return genson.serialize(queryResults);
+    }
+
+    /**
+     * GetAssetsByRangeWithPagination performs a range query based on the start and end key,
+     * page size and a bookmark.
+     */
+    @Transaction(intent = Transaction.TYPE.EVALUATE)
+    public String GetAssetsByRangeWithPagination(final Context ctx, final String startKey, final String endKey, final int pageSize, final String bookmark) {
+        QueryResultsIteratorWithMetadata<KeyValue> results = ctx.getStub().getStateByRangeWithPagination(startKey, endKey, pageSize, bookmark);
+        
+        List<Asset> queryResults = new ArrayList<>();
+        for (KeyValue res: results) {
+            Asset asset = genson.deserialize(res.getStringValue(), Asset.class);
+            queryResults.add(asset);
+        }
+
         return genson.serialize(queryResults);
     }
 }
