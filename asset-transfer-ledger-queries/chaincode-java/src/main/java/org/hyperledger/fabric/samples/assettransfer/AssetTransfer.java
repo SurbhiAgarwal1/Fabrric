@@ -28,8 +28,8 @@ import com.owlike.genson.Genson;
         name = "ledger-queries",
         info = @Info(
                 title = "Asset Transfer Ledger Queries",
-                description = "The hyperlegendary asset transfer with ledger queries",
-                version = "0.0.1+SNAPSHOT",
+                description = "The Asset Transfer Ledger Queries sample chaincode",
+                version = "1.0.0",
                 license = @License(
                         name = "Apache 2.0 License",
                         url = "http://www.apache.org/licenses/LICENSE-2.0.html"),
